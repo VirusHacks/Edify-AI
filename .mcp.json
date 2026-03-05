@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "custom-gen-ed": {
+      "command": "npx",
+      "args": ["tsx", "mcp/server.ts"],
+      "env": {
+        "GENED_ENV": "development"
+      }
+    }
+    /*
+      When upgrading to Next.js 16+, you can also enable next-devtools-mcp:
+      "next-devtools": {
+        "command": "npx",
+        "args": ["-y", "next-devtools-mcp@latest"]
+      }
+    */
+  }
+}

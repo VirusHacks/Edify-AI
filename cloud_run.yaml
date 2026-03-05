@@ -1,0 +1,67 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: edify-ai
+  namespace: 'REDACTED_NAMESPACE'
+  selfLink: /apis/serving.knative.dev/v1/namespaces/REDACTED_NAMESPACE/services/REDACTED_SERVICE
+  uid: REDACTED_UID
+  resourceVersion: REDACTED_RESOURCE_VERSION
+  generation: 23
+  creationTimestamp: 'REDACTED_TIMESTAMP'
+  labels:
+    commit-sha: REDACTED_COMMIT_SHA
+    gcb-build-id: REDACTED_BUILD_ID
+    gcb-trigger-id: REDACTED_TRIGGER_ID
+    gcb-trigger-region: europe-west1
+    managed-by: gcp-cloud-build-deploy-cloud-run
+    cloud.googleapis.com/location: europe-west1
+  annotations:
+    serving.knative.dev/creator: redacted@example.com
+    serving.knative.dev/lastModifier: redacted@example.com
+    run.googleapis.com/client-name: cloud-console
+    run.googleapis.com/operation-id: REDACTED_OPERATION_ID
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+    run.googleapis.com/invoker-iam-disabled: 'true'
+    run.googleapis.com/maxScale: '1'
+    run.googleapis.com/urls: >-
+      ["https://redacted-service.run.app","https://redacted-alias.a.run.app"]
+spec:
+  template:
+    metadata:
+      labels:
+        client.knative.dev/nonce: REDACTED_NONCE
+        commit-sha: REDACTED_COMMIT_SHA
+        gcb-build-id: REDACTED_BUILD_ID
+        gcb-trigger-id: REDACTED_TRIGGER_ID
+        gcb-trigger-region: europe-west1
+        managed-by: gcp-cloud-build-deploy-cloud-run
+        run.googleapis.com/startupProbeType: Default
+      annotations:
+        autoscaling.knative.dev/maxScale: '3'
+        run.googleapis.com/client-name: cloud-console
+        run.googleapis.com/startup-cpu-boost: 'true'
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 3000
+      serviceAccountName: redacted-service-account@developer.gserviceaccount.com
+      containers:
+      - name: edify-ai
+        image: >-
+          europe-west1-docker.pkg.dev/redacted-project/cloud-run-source-deploy/redacted-repo/edify-ai:REDACTED_IMAGE_TAG
+        ports:
+        - name: http1
+          containerPort: 3000
+        resources:
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+        startupProbe:
+          timeoutSeconds: 240
+          periodSeconds: 240
+          failureThreshold: 1
+          tcpSocket:
+            port: 3000
+  traffic:
+  - percent: 100
+    latestRevision: true
