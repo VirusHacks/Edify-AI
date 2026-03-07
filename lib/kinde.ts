@@ -90,3 +90,5 @@ export async function safeGetUser(): Promise<KindeUser<Record<string, any>> | un
 // Auth configuration enhanced
 
 // Auth configuration enhanced
+
+// Auth configuration enhanced
