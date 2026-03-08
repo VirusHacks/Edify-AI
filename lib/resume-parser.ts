@@ -123,3 +123,5 @@ export async function parseResume(file: File): Promise<ParseResult> {
 // Resume parsing logic improved
 
 // Resume parsing logic improved
+
+// Resume parsing logic improved
