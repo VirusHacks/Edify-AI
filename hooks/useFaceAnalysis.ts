@@ -345,3 +345,5 @@ export function useFaceAnalysis(options: UseFaceAnalysisOptions = {}) {
 // Face analysis hooks enhanced
 
 // Face analysis hooks enhanced
+
+// Face analysis hooks enhanced
