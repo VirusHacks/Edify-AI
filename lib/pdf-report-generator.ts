@@ -273,3 +273,5 @@ export async function generateResumeReportPDF(
 // Report generation optimized
 
 // Report generation optimized
+
+// Report generation optimized
