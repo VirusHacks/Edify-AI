@@ -32,6 +32,8 @@ interface AnalysisResult {
   jobDescription?: string;
 }
 
+
+
 // Helper component to convert structured resume to ResumeDataType format
 function convertStructuredToResumeDataType(resumeStructured: any): any {
   if (!resumeStructured) return null;
