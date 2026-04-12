@@ -1,6 +1,15 @@
+/**
+ * @file resume-extractor.ts
+ * @description Intelligent data extraction from resume text.
+ * Orchestrates between Gemini AI vision/text models and robust Regex fallbacks
+ * to populate user profiles and suggest improvements.
+ */
+
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Extracted data structure from resume
+/**
+ * Structured schema for extracted resume intelligence.
+ */
 export interface ExtractedResumeData {
   // Contact & social links
   email: string | null;
@@ -10,16 +19,16 @@ export interface ExtractedResumeData {
   portfolioUrl: string | null;
   location: string | null;
   
-  // Professional info
+  // Professional level indicator
   currentRole: string | null;
   careerLevel: "entry" | "mid" | "senior" | "executive" | null;
   
-  // Skills & interests
+  // Skills taxonomies
   technicalSkills: string[];
   softSkills: string[];
   interests: string[];
   
-  // Education
+  // Academic history
   education: Array<{
     institution: string;
     degree: string;
@@ -27,12 +36,12 @@ export interface ExtractedResumeData {
     year: string | null;
   }>;
   
-  // Experience summary
+  // Marketability metrics
   totalYearsExperience: number | null;
   industries: string[];
 }
 
-// Get API key from environment
+// Multi-variant API Key resolution
 const apiKey =
   process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
   process.env.GEMINI_API_KEY ||
@@ -41,31 +50,16 @@ const apiKey =
   "";
 
 /**
- * Extract structured data from resume text using AI
+ * Extracts structured semantic data from raw resume text using Gemini AI.
+ * Falls back to deterministic Regex extraction if AI services are unavailable.
+ * @param resumeText Raw text content extracted from PDF/DOCX.
+ * @returns Extracted data object.
  */
 export async function extractResumeData(
   resumeText: string
 ): Promise<ExtractedResumeData> {
-  // Default empty result
-  const defaultResult: ExtractedResumeData = {
-    email: null,
-    phone: null,
-    linkedinUrl: null,
-    githubUsername: null,
-    portfolioUrl: null,
-    location: null,
-    currentRole: null,
-    careerLevel: null,
-    technicalSkills: [],
-    softSkills: [],
-    interests: [],
-    education: [],
-    totalYearsExperience: null,
-    industries: [],
-  };
-
   if (!apiKey) {
-    console.warn("No Gemini API key found, using regex extraction fallback");
+    console.warn("[ResumeExtractor] Missing Gemini API Key; falling back to Regex heuristics.");
     return extractWithRegex(resumeText);
   }
 

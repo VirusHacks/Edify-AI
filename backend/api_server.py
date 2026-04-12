@@ -1,350 +1,227 @@
 """
-Simple HTTP API server for the Python backend.
-
-This allows the Next.js frontend to call the Python LangGraph backend via HTTP.
+Edify-AI Python Backend - API Server
+------------------------------------
+Provides a lightweight HTTP interface over the multi-agent LangGraph system.
+Used for resume analysis, optimization, and health monitoring.
+Deployed via Cloud Run.
 """
 
 import os
 import sys
 import json
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 import traceback
 
-# Add src to path
+# Core Path Configuration
 sys.path.insert(0, str(Path(__file__).parent))
-
 
 from src.graph.orchestrator import build_langgraph_app
 from src.graph.optimization_orchestrator import build_optimization_app
 from src.utils.logging_utils import setup_logging, get_logger
 
-# Setup logging
+# System Initialization
 setup_logging("INFO")
 logger = get_logger(__name__)
 
-# Build the LangGraph apps once at startup
-logger.info("Building LangGraph applications...")
+logger.info("Initializing multi-agent graph architectures...")
 app = build_langgraph_app()
 optimization_app = build_optimization_app()
-logger.info("LangGraph applications ready")
+logger.info("Backend systems ready for inference.")
 
 
 class ResumeAnalysisHandler(BaseHTTPRequestHandler):
-    """HTTP request handler for resume analysis."""
+    """
+    Main Request Handler for Resume Intelligence Services.
+    Routes:
+    - GET  /health   : Vitality check.
+    - POST /         : Full ATS analysis and scoring.
+    - POST /optimize : Resume-to-Job alignment and refactoring.
+    """
     
     def do_GET(self):
-        """Handle GET requests (health check)."""
+        """Standard health check endpoint."""
         if self.path == "/health":
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()
-            self.wfile.write(json.dumps({"status": "healthy"}).encode())
+            self.wfile.write(json.dumps({"status": "healthy", "service": "edify-ai-python"}).encode())
         else:
-            self.send_response(404)
-            self.end_headers()
+            self._send_error(404, "Unknown endpoint")
     
     def do_OPTIONS(self):
-        """Handle CORS preflight requests."""
+        """Cross-Origin Resource Sharing (CORS) preflight support."""
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS, GET')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
     
     def do_POST(self):
-        """Handle POST requests for resume analysis and optimization."""
+        """Main routing logic for POST requests."""
         try:
-            # Parse URL path
             parsed_path = urlparse(self.path)
             path = parsed_path.path
             
-            # Route to appropriate handler
             if path == "/optimize":
                 self._handle_optimize()
-            elif path == "/" or path == "":
+            elif path in ["/", ""]:
                 self._handle_analysis()
             else:
                 self._send_error(404, f"Endpoint not found: {path}")
                 
         except Exception as e:
-            logger.error(f"Error processing request: {e}")
+            logger.error(f"Critical execution error: {e}")
             logger.error(traceback.format_exc())
-            self._send_error(500, f"Internal server error: {str(e)}")
+            self._send_error(500, f"Inference engine failure: {str(e)}")
     
     def _handle_analysis(self):
-        """Handle resume analysis requests."""
-            # Parse request
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
-            
-            # Parse JSON
-            try:
-                request_data = json.loads(post_data.decode('utf-8'))
-            except json.JSONDecodeError as e:
-                self._send_error(400, f"Invalid JSON: {e}")
-                return
-            
-            # Extract required fields
-            resume_text = request_data.get('resume_text')
-            job_description = request_data.get('job_description')
-            
-            if not resume_text or not job_description:
-                self._send_error(400, "resume_text and job_description are required")
-                return
-            
-            logger.info("Processing resume analysis request")
-            
-            # Prepare initial state
-            initial_state = {
-                "resume_text": resume_text,
-                "job_description": job_description,
-            }
-            
-            # Invoke the LangGraph app
-            result = app.invoke(initial_state)
-            
-            # Extract final score
-            final_score_dict = result.get("final_score")
-            if not final_score_dict:
-                self._send_error(500, "No final_score in result")
-                return
-            
-            # Format response to match frontend expectations
-            overall_score = final_score_dict.get("overall_score", 0)
-            resume_structured = result.get("resume_structured", {})
-            
-            response_data = {
-                "success": True,
-                "data": {
-                    "analysisId": f"analysis_{os.urandom(8).hex()}",
-                    "overallScore": round(overall_score),
-                    "atsMatchPercentage": round(overall_score),
-                    "resumeStructured": resume_structured,  # Include structured resume data
-                    "analysis": {
-                        "overallScore": round(overall_score),
-                        "atsMatchPercentage": round(overall_score),
-                        "sectionScores": final_score_dict.get("section_scores", []),
-                        "comments": final_score_dict.get("comments", []),
-                        "strengths": self._extract_strengths(final_score_dict),
-                        "weaknesses": self._extract_weaknesses(final_score_dict),
-                        "nextSteps": self._extract_next_steps(final_score_dict),
-                        "aiGeneratedSummary": " ".join(final_score_dict.get("comments", [])) or "Analysis completed using multi-agent LangGraph system.",
-                    }
-                }
-            }
-            
-            # Send response
-            self._send_json(200, response_data)
-            logger.info("Resume analysis completed successfully")
-            
-    def _handle_optimize(self):
-        """Handle resume optimization requests."""
+        """Handles full spectrum ATS scoring and analysis."""
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
+        
         try:
-            # Parse request
-            content_length = int(self.headers.get('Content-Length', 0))
-            post_data = self.rfile.read(content_length)
-            
-            # Parse JSON
-            try:
-                request_data = json.loads(post_data.decode('utf-8'))
-            except json.JSONDecodeError as e:
-                logger.error(f"Invalid JSON in optimization request: {e}")
-                self._send_error(400, f"Invalid JSON: {e}")
-                return
-            
-            # Extract required fields
-            resume_text = request_data.get('resume_text')
-            job_description = request_data.get('job_description')
-            resume_structured = request_data.get('resume_structured')  # Optional - if provided, skip extraction
-            
-            if not job_description:
-                logger.error("Missing job_description in optimization request")
-                self._send_error(400, "job_description is required")
-                return
-            
-            if not resume_text and not resume_structured:
-                logger.error("Missing both resume_text and resume_structured in optimization request")
-                self._send_error(400, "Either resume_text or resume_structured is required")
-                return
-            
-            logger.info("Processing resume optimization request")
-            
-            # Extract resume first if structured data not provided (like ATS scoring does)
-            # This way the graph receives structured data and skips extraction = 5 calls total
-            if not resume_structured and resume_text:
-                logger.info("Extracting structured resume data first")
-                try:
-                    extract_state = {
-                        "resume_text": resume_text,
-                        "job_description": job_description,
-                    }
-                    extract_result = app.invoke(extract_state)  # Use ATS app to extract (1 call)
-                    resume_structured = extract_result.get("resume_structured", {})
-                    if not resume_structured:
-                        logger.error("Failed to extract structured resume data")
-                        self._send_error(500, "Failed to extract structured resume data")
-                        return
-                except Exception as e:
-                    logger.error(f"Error extracting resume: {e}")
-                    logger.error(traceback.format_exc())
-                    self._send_error(500, f"Failed to extract resume: {str(e)}")
-                    return
-            
-            # Prepare initial state with structured data (graph will skip extraction)
-            initial_state = {
-                "resume_structured": resume_structured,
-                "job_description": job_description,
-                "resume_text": resume_text,  # Keep for summary extraction if needed
-            }
-            
-            # Invoke the optimization LangGraph app (5 parallel calls, no extraction)
-            logger.info("Invoking optimization LangGraph app")
-            try:
-                result = optimization_app.invoke(initial_state)
-            except Exception as e:
-                logger.error(f"Error in optimization LangGraph app: {e}")
-                logger.error(traceback.format_exc())
-                self._send_error(500, f"Optimization failed: {str(e)}")
-                return
-            
-            # Extract optimization result
-            optimization_result_dict = result.get("optimization_result")
-            resume_structured = result.get("resume_structured", {})
-            
-            if not optimization_result_dict:
-                logger.error("No optimization_result in result")
-                self._send_error(500, "No optimization_result in result")
-                return
-            
-            # Format response for frontend
-            response_data = {
-                "success": True,
-                "data": {
-                    "optimizationId": f"opt_{os.urandom(8).hex()}",
-                    "resumeStructured": resume_structured,
-                    "optimization": optimization_result_dict,
-                    "original": {
-                        "summary": resume_structured.get("summary", ""),
-                        "experience": resume_structured.get("experience", []),
-                        "skills": resume_structured.get("skills", []),
-                        "projects": resume_structured.get("projects", []),
-                        "education": resume_structured.get("education", []),
-                    }
+            request_data = json.loads(post_data.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            self._send_error(400, "Malformed request: Invalid JSON body")
+            return
+        
+        resume_text = request_data.get('resume_text')
+        job_description = request_data.get('job_description')
+        
+        if not resume_text or not job_description:
+            self._send_error(400, "Missing required fields: resume_text and job_description")
+            return
+        
+        logger.info("[Server] Transitioning to ATS Analysis Graph")
+        initial_state = {"resume_text": resume_text, "job_description": job_description}
+        result = app.invoke(initial_state)
+        
+        final_score_dict = result.get("final_score")
+        if not final_score_dict:
+            self._send_error(500, "Graph failed to yield analysis results")
+            return
+        
+        overall_score = final_score_dict.get("overall_score", 0)
+        
+        response_data = {
+            "success": True,
+            "data": {
+                "analysisId": f"gen_{os.urandom(4).hex()}",
+                "overallScore": round(overall_score),
+                "atsMatchPercentage": round(overall_score),
+                "resumeStructured": result.get("resume_structured", {}),
+                "analysis": {
+                    "sectionScores": final_score_dict.get("section_scores", []),
+                    "comments": final_score_dict.get("comments", []),
+                    "strengths": self._extract_strengths(final_score_dict),
+                    "weaknesses": self._extract_weaknesses(final_score_dict),
+                    "nextSteps": self._extract_next_steps(final_score_dict),
+                    "aiGeneratedSummary": "Summary constructed by Edify-AI multi-agent coordinator.",
                 }
             }
-            
-            # Send response
-            self._send_json(200, response_data)
-            logger.info("Resume optimization completed successfully")
-            
+        }
+        self._send_json(200, response_data)
+    
+    def _handle_optimize(self):
+        """Handles resume optimization and refactoring."""
+        content_length = int(self.headers.get('Content-Length', 0))
+        post_data = self.rfile.read(content_length)
+        
+        try:
+            request_data = json.loads(post_data.decode('utf-8'))
+        except json.JSONDecodeError:
+            self._send_error(400, "Invalid JSON payload")
+            return
+        
+        resume_text = request_data.get('resume_text')
+        job_description = request_data.get('job_description')
+        resume_structured = request_data.get('resume_structured')
+        
+        if not job_description:
+            self._send_error(400, "job_description is a required parameter")
+            return
+
+        logger.info("[Server] Transitioning to Optimization Graph")
+        initial_state = {
+            "resume_structured": resume_structured,
+            "job_description": job_description,
+            "resume_text": resume_text,
+        }
+        
+        try:
+            result = optimization_app.invoke(initial_state)
+            opt_data = {
+                "success": True,
+                "data": {
+                    "optimizationId": f"opt_{os.urandom(4).hex()}",
+                    "resumeStructured": result.get("resume_structured", {}),
+                    "optimization": result.get("optimization_result", {}),
+                }
+            }
+            self._send_json(200, opt_data)
         except Exception as e:
-            logger.error(f"Error processing optimization request: {e}")
-            logger.error(traceback.format_exc())
-            self._send_error(500, f"Internal server error: {str(e)}")
-    
-    def _extract_strengths(self, final_score: Dict[str, Any]) -> list:
-        """Extract strengths from final score."""
+            self._send_error(500, f"Optimization routine crashed: {str(e)}")
+
+    def _extract_strengths(self, final_score: Dict[str, Any]) -> List[str]:
+        """Utility to isolate top scoring areas."""
         strengths = []
-        section_scores = final_score.get("section_scores", [])
-        for section in section_scores:
-            if section.get("score", 0) >= 70:
-                reasons = section.get("reasons", [])
-                if reasons:
-                    strengths.extend(reasons[:2])  # Top 2 reasons per strong section
-        return strengths[:5]  # Limit to 5 total
-    
-    def _extract_weaknesses(self, final_score: Dict[str, Any]) -> list:
-        """Extract weaknesses from final score."""
+        for section in final_score.get("section_scores", []):
+            if section.get("score", 0) >= 75:
+                strengths.extend(section.get("reasons", [])[:1])
+        return list(set(strengths))[:5]
+
+    def _extract_weaknesses(self, final_score: Dict[str, Any]) -> List[str]:
+        """Utility to identify critical match gaps."""
         weaknesses = []
-        section_scores = final_score.get("section_scores", [])
-        for section in section_scores:
+        for section in final_score.get("section_scores", []):
             if section.get("score", 0) < 60:
-                missing = section.get("missing_requirements", [])
-                if missing:
-                    weaknesses.extend(missing[:2])  # Top 2 missing per weak section
-        return weaknesses[:5]  # Limit to 5 total
-    
-    def _extract_next_steps(self, final_score: Dict[str, Any]) -> list:
-        """Extract next steps from final score."""
-        next_steps = []
-        section_scores = final_score.get("section_scores", [])
-        
-        # Find lowest scoring section
-        lowest_section = min(
-            section_scores,
-            key=lambda s: s.get("score", 0),
-            default=None
-        )
-        
-        if lowest_section and lowest_section.get("score", 0) < 70:
-            missing = lowest_section.get("missing_requirements", [])
-            if missing:
-                next_steps.append(f"Focus on improving {lowest_section.get('section_name', 'your resume')}")
-                next_steps.extend([f"Add: {req}" for req in missing[:3]])
-        
-        if not next_steps:
-            next_steps = [
-                "Continue building relevant experience",
-                "Highlight key achievements with metrics",
-                "Keep skills section updated with latest technologies"
-            ]
-        
-        return next_steps[:5]
-    
+                weaknesses.extend(section.get("missing_requirements", [])[:1])
+        return list(set(weaknesses))[:5]
+
+    def _extract_next_steps(self, final_score: Dict[str, Any]) -> List[str]:
+        """Provides actionable feedback based on lowest scores."""
+        low_sections = [s for s in final_score.get("section_scores", []) if s.get("score", 0) < 70]
+        steps = [f"Improve your {s.get('section_name')} section" for s in low_sections]
+        return steps[:3] if steps else ["Continue refining with metrics-based achievements"]
+
     def _send_json(self, status: int, data: Dict[str, Any]):
-        """Send JSON response."""
-        response_json = json.dumps(data)
+        """Helper to send JSON response with standard headers."""
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Access-Control-Allow-Origin', '*')
         self.end_headers()
-        self.wfile.write(response_json.encode('utf-8'))
-    
+        self.wfile.write(json.dumps(data).encode('utf-8'))
+
     def _send_error(self, status: int, message: str):
-        """Send error response."""
-        self._send_json(status, {
-            "success": False,
-            "error": message
-        })
-    
+        """Helper for standardized error signaling."""
+        self._send_json(status, {"success": False, "error": message})
+
     def log_message(self, format, *args):
-        """Override to use our logger."""
+        """Intercepts internal server logging to use project standard logger."""
         logger.info(f"{self.address_string()} - {format % args}")
 
 
 def run_server(port: int = None):
-    """Run the HTTP server."""
-    # Cloud Run sets PORT environment variable, use it if available
+    """Orchestrates server startup and lifecycle."""
     if port is None:
         port = int(os.getenv("PORT", "8000"))
     
     server_address = ('', port)
     httpd = HTTPServer(server_address, ResumeAnalysisHandler)
-    logger.info(f"Starting HTTP server on port {port}")
-    logger.info(f"Server ready at http://0.0.0.0:{port}")
-    logger.info(f"Health check: http://0.0.0.0:{port}/health")
+    logger.info(f"Edify-AI Python Server broadcasting on port {port}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        logger.info("Shutting down server...")
+        logger.info("Server termination signal received. Exiting.")
         httpd.shutdown()
 
 
 if __name__ == '__main__':
     import argparse
-    # Cloud Run sets PORT environment variable, default to 8000 for local dev
-    default_port = int(os.getenv("PORT", "8000"))
-    parser = argparse.ArgumentParser(description='Resume Analysis API Server')
-    parser.add_argument('--port', type=int, default=None, help='Port to run server on (defaults to PORT env var or 8000)')
+    parser = argparse.ArgumentParser(description='Edify-AI Inference Server')
+    parser.add_argument('--port', type=int, default=None, help='Target port')
     args = parser.parse_args()
-    run_server(args.port if args.port is not None else default_port)
-
-
-# API endpoints enhanced
-
-# API endpoints enhanced
-
-# API endpoints enhanced
+    run_server(args.port)

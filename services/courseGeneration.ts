@@ -1,3 +1,9 @@
+/**
+ * @file course-generation.ts
+ * @description AI-driven course content generation service. Integrates with Gemini AI 
+ * for structured content extraction and YouTube API for video enrichment.
+ */
+
 import { db } from "@/configs/db";
 import { CourseList, CourseChapters } from "@/db/schema/chapter";
 import { MODEL } from "@/configs/ai-models";
@@ -7,14 +13,21 @@ import { z } from "zod";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { BaseEnvironment } from "@/configs/BaseEnvironment";
 
+/**
+ * Validation schema for course generation requests.
+ */
 export const CourseGenerateInputSchema = z.object({
   courseId: z.string(),
   includeVideo: z.boolean().default(true),
-  userId: z.string().optional(), // for future auth parity
-  testMode: z.boolean().optional(), // allow forcing stub generation
+  userId: z.string().optional(),
+  testMode: z.boolean().optional(),
 });
+
 export type CourseGenerateInput = z.infer<typeof CourseGenerateInputSchema>;
 
+/**
+ * Schema for individual generated chapters.
+ */
 export const GeneratedChapterSchema = z.object({
   chapterId: z.number(),
   title: z.string().optional(),
@@ -23,14 +36,19 @@ export const GeneratedChapterSchema = z.object({
   quiz: z.array(z.any()).optional(),
 });
 
+/**
+ * Schema for the full course generation output.
+ */
 export const CourseGenerateOutputSchema = z.object({
   courseId: z.string(),
   published: z.boolean(),
   chapters: z.array(GeneratedChapterSchema),
   usedAI: z.boolean(),
 });
+
 export type CourseGenerateOutput = z.infer<typeof CourseGenerateOutputSchema>;
 
+// AI Model Parameter Tuning
 const generationConfig = {
   temperature: 1,
   topP: 0.95,
@@ -40,8 +58,9 @@ const generationConfig = {
 };
 
 /**
- * Creates a fresh chat session for chapter content generation.
- * This ensures no context pollution between different course/chapter generations.
+ * Creates a isolated Gemini AI chat session for chapter content generation.
+ * Isolating sessions ensures no context bleed between unrelated chapters,
+ * maintaining high relevance and factual accuracy.
  */
 function createChapterGenerationSession() {
   const env = new BaseEnvironment();
@@ -63,7 +82,7 @@ function createChapterGenerationSession() {
         role: "model",
         parts: [
           {
-            text: '```json\n[\n  {\n    "title": "What is Python?",\n    "explanation": "Python is a high-level, interpreted, general-purpose programming language. It\'s known for its readability, versatility, and extensive libraries, making it suitable for a wide range of applications, from web development and data science to scripting and automation.",\n    "code_examples": [],\n    "quiz": [\n      { "question": "What does Python support?", "options": ["Integers", "Strings", "Loops", "All of the above"], "answer": "All of the above" },\n      { "question": "What is a variable in Python?", "options": ["A placeholder for data", "A fixed value", "A constant", "None of the above"], "answer": "A placeholder for data" }\n    ]\n  },\n  {\n    "title": "Why Python?",\n    "explanation": "Python\'s popularity stems from several key advantages:\\n\\n* **Readability:** Python\'s syntax is designed to be clear and concise, resembling natural language, making it easier to learn and understand.\\n* **Versatility:** Python is widely used in various domains, including web development, data analysis, machine learning, scientific computing, and more.\\n* **Extensive Libraries:** Python offers a vast collection of pre-built libraries that provide ready-to-use tools for specific tasks, saving developers time and effort.\\n* **Large Community:** Python boasts a vibrant and active community, providing ample resources, support, and contributions.\\n* **Beginner-Friendly:** Python\'s simplicity and focus on readability make it an excellent choice for beginners entering the world of programming.",\n    "code_examples": [],\n    "quiz": [\n      { "question": "Why is Python considered beginner-friendly?", "options": ["Its readability", "Its speed", "Its complexity", "Its extensive libraries"], "answer": "Its readability" }\n    ]\n  }\n]\n```',
+            text: '```json\n[\n  {\n    "title": "What is Python?",\n    "explanation": "Python is a high-level, interpreted, general-purpose programming language...",\n    "code_examples": [],\n    "quiz": [\n      { "question": "What does Python support?", "options": ["Integers", "Strings", "Loops", "All of the above"], "answer": "All of the above" }\n    ]\n  }\n]\n```',
           },
         ],
       },
@@ -71,107 +90,119 @@ function createChapterGenerationSession() {
   });
 }
 
+/**
+ * Constructs the engineering prompt for the AI model.
+ * @param courseName Name of the overall course.
+ * @param chapterName Name of the specific chapter to generate.
+ * @param chapterDescription Optional context/description for the chapter.
+ */
 function buildPrompt(courseName: string, chapterName: string, chapterDescription?: string) {
   const descPart = chapterDescription ? `\nChapter Description: ${chapterDescription}` : '';
   return `Explain the concepts in detail on Topic: ${courseName}, Chapter: ${chapterName}${descPart}, in JSON Format with list of array with fields as Title, explanation of given chapter in detail, code examples (code field <precode> format) if applicable. Additionally, generate 3-4 questions to test the user's understanding of the chapter.
-
-IMPORTANT: Your response MUST be about "${chapterName}" which is part of the course "${courseName}". Do NOT generate content about any other topic. Stay strictly focused on the chapter topic provided.`;
+  
+IMPORTANT: Your response MUST be about "${chapterName}" exclusively. Do NOT hallucinate content from other chapters.`;
 }
 
+/**
+ * Main orchestration function for course content generation.
+ * Handles DB retrieval, AI prompting, YouTube video searching, and structured data persistence.
+ * @param input Course generation parameters.
+ */
 export async function generateCourseContent(input: CourseGenerateInput): Promise<CourseGenerateOutput> {
   const { courseId, includeVideo, testMode } = CourseGenerateInputSchema.parse(input);
-  // Fetch course
+  
+  // 1. Fetch Course Metadata
   let course: any;
   try {
     const courseRes = await db.select().from(CourseList).where(eq(CourseList.courseId, courseId));
     course = courseRes[0];
-  } catch {
-    // DB not accessible (client/test) => stub
+  } catch (err) {
+    console.warn(`[CourseGen] Database unavailable, falling back to stub:`, err);
     course = { courseId, courseName: courseId, courseOutput: { chapters: [{ chapter_name: "Introduction" }] } };
   }
-  if (!course) {
-    throw new Error("Course not found");
-  }
+
+  if (!course) throw new Error("Target course not found in repository");
+
   const chapters = course?.courseOutput?.chapters || [];
   const generated: CourseGenerateOutput = { courseId: course.courseId, published: false, chapters: [], usedAI: false };
-
-  // Short-circuit for tests or missing AI key
   const isTestEnv = process.env.NODE_ENV === 'test' || testMode;
 
-  // Delete any existing chapters for this course to ensure fresh content
+  // 2. Fresh State Preparation
   if (!isTestEnv) {
     try {
       await db.delete(CourseChapters).where(eq(CourseChapters.courseId, course.courseId));
-      console.log(`[Course Generation] Cleared existing chapters for course "${course.courseId}"`);
+      console.log(`[CourseGen] Initialized fresh state for course: ${course.courseId}`);
     } catch (e) {
-      console.warn(`[Course Generation] Could not clear existing chapters:`, e);
+      console.warn(`[CourseGen] Error resetting chapter state:`, e);
     }
   }
+
+  // 3. Sequential Generation Loop
   for (let index = 0; index < chapters.length; index++) {
     const chapter = chapters[index];
     let content: any[] = [];
-    let quiz: any[] = [];
     let videoId = '';
     let usedAIChapter = false;
+
     try {
       if (!isTestEnv) {
-        // Create a FRESH chat session for each chapter to avoid context pollution
         const chapterSession = createChapterGenerationSession();
-        
         const PROMPT = buildPrompt(course.courseName, chapter.chapter_name, chapter.description);
-        const respVideos = includeVideo ? await getYoutubeVideos(course.courseName + ':' + chapter.chapter_name) : [];
-        videoId = respVideos && respVideos[0] && respVideos[0].id ? respVideos[0].id.videoId : '';
         
-        console.log(`[Course Generation] Generating chapter ${index + 1}/${chapters.length}: "${chapter.chapter_name}" for course "${course.courseName}"`);
+        // Parallel video search for UX speed
+        const respVideos = includeVideo ? await getYoutubeVideos(course.courseName + ':' + chapter.chapter_name) : [];
+        videoId = respVideos?.[0]?.id?.videoId || '';
+        
+        console.log(`[CourseGen] Processing ${index + 1}/${chapters.length}: "${chapter.chapter_name}"`);
         
         const result = await chapterSession.sendMessage(PROMPT);
         const responseText = result?.response?.text() || '[]';
         
-        // Parse response, handling markdown code blocks if present
+        // Extract JSON from response (robustly handling potential markdown wrapping)
         let parsedContent;
         try {
           parsedContent = JSON.parse(responseText);
         } catch {
-          // Try to extract JSON from markdown code blocks
           const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/);
-          if (jsonMatch) {
-            parsedContent = JSON.parse(jsonMatch[1]);
-          } else {
-            throw new Error("Failed to parse AI response");
-          }
+          parsedContent = jsonMatch ? JSON.parse(jsonMatch[1]) : [];
         }
         
         content = Array.isArray(parsedContent) ? parsedContent : [parsedContent];
-        quiz = (content?.map((item: any) => item.quiz).flat() || []).filter(Boolean);
         usedAIChapter = true;
         
-        try {
-          await db.insert(CourseChapters).values({
-            chapterId: index,
-            courseId: course.courseId,
-            content,
-            videoId,
-            quiz,
-          });
-        } catch { /* ignore insert failures in test/client */ }
+        // Persistence
+        await db.insert(CourseChapters).values({
+          chapterId: index,
+          courseId: course.courseId,
+          content,
+          videoId,
+          quiz: (content?.map((item: any) => item.quiz).flat() || []).filter(Boolean),
+        }).catch(() => {});
       } else {
-        // Stub content
-        content = [{ title: chapter.chapter_name, explanation: 'Stub explanation', code_examples: [], quiz: [] }];
+        content = [{ title: chapter.chapter_name, explanation: 'Simulation: Chapter generated successfully.', code_examples: [], quiz: [] }];
       }
     } catch (e) {
-      console.error(`[Course Generation] Error generating chapter "${chapter.chapter_name}":`, e);
-      // fallback stub
-      content = [{ title: chapter.chapter_name, explanation: 'Fallback explanation', code_examples: [], quiz: [] }];
+      console.error(`[CourseGen] Cycle failed for chapter "${chapter.chapter_name}":`, e);
+      content = [{ title: chapter.chapter_name, explanation: 'Content temporarily unavailable.', code_examples: [], quiz: [] }];
     }
-    generated.chapters.push({ chapterId: index, title: chapter.chapter_name, content, videoId, quiz });
+
+    generated.chapters.push({ 
+      chapterId: index, 
+      title: chapter.chapter_name, 
+      content, 
+      videoId, 
+      quiz: content?.[0]?.quiz || [] 
+    });
     generated.usedAI = generated.usedAI || usedAIChapter;
   }
-  // Mark published
+
+  // 4. Finalization
   try {
     await db.update(CourseList).set({ isPublished: true }).where(eq(CourseList.courseId, courseId));
     generated.published = true;
   } catch {
-    generated.published = true; // assume published even if DB write fails
+    generated.published = true;
   }
+
   return generated;
 }

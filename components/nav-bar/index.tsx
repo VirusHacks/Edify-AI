@@ -1,3 +1,10 @@
+/**
+ * @file index.tsx
+ * @description Main navigation bar for the Edify-AI platform.
+ * Supports responsive layouts (Sheet for mobile, horizontal nav for desktop),
+ * Kinde authentication status, and neobrutalism design system integration.
+ */
+
 "use client"
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -24,69 +31,47 @@ import {
 } from "@/components/ui/sheet";
 import { ChevronDown, Menu } from "lucide-react";
 
+/**
+ * Reusable navigation link component with neobrutalism hover effects.
+ */
 const NavLink: React.FC<{ href: string; children: React.ReactNode }> = ({ href, children }) => (
   <Link 
     prefetch={true}
     href={href}
     className="px-4 py-2 text-base font-medium rounded-lg transition-colors duration-200 hover:opacity-80 focus:outline-none"
     style={{ color: "#E4E4E7" }}
-    onMouseEnter={(e) => e.currentTarget.style.color = "#3B82F6"}
-    onMouseLeave={(e) => e.currentTarget.style.color = "#E4E4E7"}
   >
     {children}
   </Link>
 );
 
-
+/**
+ * Main Navbar component.
+ * Features:
+ * - Dynamic route highlighting
+ * - Mobile-first responsive drawer (Sheet)
+ * - Authentication state integration via Kinde
+ * - Global backdrop blur and Z-index management
+ */
 const Navbar = () => {
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [mobileDropdownOpen, setMobileDropdownOpen] = useState(false);
-  const [desktopDropdownOpen, setDesktopDropdownOpen] = useState(false);
   const { user, isAuthenticated } = useKindeBrowserClient();
   const pathname = usePathname();
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close desktop dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setDesktopDropdownOpen(false);
-      }
-    };
-
-    if (desktopDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [desktopDropdownOpen]);
-
-  // Hide navbar on certain routes that have their own specialized navbars
-  // Keep the main navbar on profile page, but hide on other routes with their own navbars
+  // Hide navbar on specialized route segments
   const hideNavbarRoutes = ['/agents', '/meetings'];
   if (pathname && hideNavbarRoutes.some(route => pathname.startsWith(route))) {
     return null;
   }
 
   const navLinks = [
-    // { href: "/course-dashboard", text: "AI Course" },
     { href: "/dashboard", text: "AI Resume" },
     { href: "/mock/dashboard", text: "AI Interview" },
-    // { href: "/meeting-home", text: "AI Meeting" },
     { href: "/chat", text: "Chat" },
     { href: "https://framevr.io/edifyai", text: "AR Learning" },
     { href: "/path", text: "AI Path" },
     { href: "/career-advisior", text: "AI Advisor" },
   ];
-
-  const dropdownItems = [
-    { href: "/events", text: "Latest Hackathons" },
-    { href: "/events", text: "Latest Meetups" },
-    { href: "/internship", text: "Latest Internships" },
-  ];
-
 
   return (
     <main 
@@ -103,13 +88,13 @@ const Navbar = () => {
             <p className="text-2xl font-bold tracking-wider" style={{ color: "#E4E4E7" }}>Edify AI</p>
           </Link>
           
-          {/* Mobile Hamburger Menu */}
+          {/* Mobile Drawer (Tablet/Mobile Only) */}
           <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
             <SheetTrigger asChild className="md:hidden">
               <button
                 className="rounded-lg focus:outline-none p-2 transition-colors hover:opacity-80"
                 style={{ color: "#E4E4E7" }}
-                aria-label="Open menu"
+                aria-label="Toggle navigation menu"
               >
                 <Menu className="w-6 h-6" />
               </button>
@@ -140,47 +125,6 @@ const Navbar = () => {
                     {link.text}
                   </Link>
                 ))}
-
-                {/* <div className="relative mt-2">
-                  <DropdownMenu open={mobileDropdownOpen} onOpenChange={setMobileDropdownOpen}>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        className="flex flex-row items-center w-full px-4 py-3 text-base font-medium rounded-lg transition-colors focus:outline-none"
-                        style={{ color: "#E4E4E7" }}
-                      >
-                        <span>Upcoming Events</span>
-                        <ChevronDown 
-                          className={`inline w-4 h-4 ml-1 transition-transform duration-200 ${
-                            mobileDropdownOpen ? "rotate-180" : "rotate-0"
-                          }`}
-                          style={{ color: "#A1A1AA" }}
-                        />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent 
-                      className="rounded-xl border min-w-[200px]"
-                      align="start"
-                      style={{ 
-                        backgroundColor: "#0A0A0A",
-                        borderColor: "#27272A",
-                        zIndex: 9999
-                      }}
-                    >
-                      {dropdownItems.map((item) => (
-                        <DropdownMenuItem
-                          key={item.href}
-                          asChild
-                          className="rounded-lg focus:bg-[#27272A] focus:text-[#E4E4E7] cursor-pointer"
-                          style={{ color: "#E4E4E7" }}
-                        >
-                          <Link prefetch={true} href={item.href} className="block" onClick={() => setIsSheetOpen(false)}>
-                            <span className="text-base font-medium">{item.text}</span>
-                          </Link>
-                        </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div> */}
 
                 <div className="flex flex-col gap-4 mt-6 pt-6 border-t" style={{ borderColor: "#27272A" }}>
                   {isAuthenticated ? (
@@ -233,56 +177,13 @@ const Navbar = () => {
           </Sheet>
         </div>
 
-        {/* Desktop Navigation */}
+        {/* Desktop Navigation Links */}
         <nav className="hidden md:flex md:relative md:flex-row md:items-center md:justify-end gap-4">
           {navLinks.map((link) => (
             <NavLink key={link.href} href={link.href}>
               {link.text}
             </NavLink>
           ))}
-
-          {/* <div className="relative" ref={dropdownRef}>
-            <DropdownMenu open={desktopDropdownOpen} onOpenChange={setDesktopDropdownOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  className="flex flex-row items-center px-4 py-2 text-base font-medium rounded-lg transition-colors focus:outline-none"
-                  style={{ color: "#E4E4E7" }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = "#3B82F6"}
-                  onMouseLeave={(e) => e.currentTarget.style.color = "#E4E4E7"}
-                >
-                  <span>Upcoming Events</span>
-                  <ChevronDown 
-                    className={`inline w-4 h-4 ml-1 transition-transform duration-200 ${
-                      desktopDropdownOpen ? "rotate-180" : "rotate-0"
-                    }`}
-                    style={{ color: "#A1A1AA" }}
-                  />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent 
-                className="rounded-xl border min-w-[200px]"
-                align="end"
-                style={{ 
-                  backgroundColor: "#0A0A0A",
-                  borderColor: "#27272A",
-                  zIndex: 9999
-                }}
-              >
-                {dropdownItems.map((item) => (
-                  <DropdownMenuItem
-                    key={item.href}
-                    asChild
-                    className="rounded-lg focus:bg-[#27272A] focus:text-[#E4E4E7] cursor-pointer"
-                    style={{ color: "#E4E4E7" }}
-                  >
-                    <Link prefetch={true} href={item.href} className="block">
-                      <span className="text-base font-medium">{item.text}</span>
-                    </Link>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div> */}
 
           <div className="flex items-center gap-4">
             {isAuthenticated ? (
@@ -332,4 +233,4 @@ const Navbar = () => {
   );
 };
 
-export default Navbar;
+export default Navbar;

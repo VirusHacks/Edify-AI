@@ -1,14 +1,22 @@
+/**
+ * @file resume-parser.ts
+ * @description Core utility for parsing various resume formats (PDF, DOCX) using Gemini AI and Mammoth.
+ */
+
 import mammoth from 'mammoth';
 import { Buffer } from 'buffer';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+/**
+ * Result structure for the parsing process
+ */
 export interface ParseResult {
   text: string;
   success: boolean;
   error?: string;
 }
 
-// Use the API key from environment (check multiple possible env var names for compatibility)
+// API Configuration for Gemini
 const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || 
                 process.env.GEMINI_API_KEY || 
                 process.env.GOOGLE_GEMINI_API_KEY || 
@@ -18,13 +26,15 @@ const apiKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
 const genAI = new GoogleGenerativeAI(apiKey);
 
 /**
- * Parse PDF resume using Gemini Vision API
+ * Parses a PDF resume by converting it to base64 and sending it to Gemini Vision.
+ * @param buffer The raw binary data of the PDF file.
+ * @returns A promise resolving to the parsed text and success status.
  */
 export async function parsePDF(buffer: Buffer): Promise<ParseResult> {
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     
-    // Convert buffer to base64
+    // Convert buffer to base64 for vision processing
     const base64Data = buffer.toString('base64');
     
     const prompt = `Extract all text content from this PDF resume. Return ONLY the text content, preserving the structure and formatting as much as possible. Do not add any commentary or explanations.`;
@@ -47,7 +57,7 @@ export async function parsePDF(buffer: Buffer): Promise<ParseResult> {
       success: true,
     };
   } catch (error) {
-    console.error('Error parsing PDF:', error);
+    console.error('[ResumeParser] Error parsing PDF:', error);
     return {
       text: '',
       success: false,
@@ -57,7 +67,9 @@ export async function parsePDF(buffer: Buffer): Promise<ParseResult> {
 }
 
 /**
- * Parse DOCX resume and extract text content
+ * Extracts raw text from a DOCX file using mammoth.
+ * @param buffer The binary data of the DOCX file.
+ * @returns A promise resolving to the extracted text.
  */
 export async function parseDOCX(buffer: Buffer): Promise<ParseResult> {
   try {
@@ -67,7 +79,7 @@ export async function parseDOCX(buffer: Buffer): Promise<ParseResult> {
       success: true,
     };
   } catch (error) {
-    console.error('Error parsing DOCX:', error);
+    console.error('[ResumeParser] Error parsing DOCX:', error);
     return {
       text: '',
       success: false,
@@ -77,7 +89,11 @@ export async function parseDOCX(buffer: Buffer): Promise<ParseResult> {
 }
 
 /**
- * Parse resume file based on MIME type
+ * Orchestrates resume parsing based on the detected MIME type.
+ * Supports PDF and DOCX.
+ * @param buffer Binary file content.
+ * @param mimeType Specified MIME type of the file.
+ * @returns ParseResult with extracted text.
  */
 export async function parseResumeFile(
   buffer: Buffer,
@@ -101,7 +117,8 @@ export async function parseResumeFile(
 }
 
 /**
- * Parse resume from File object
+ * High-level API for parsing a File object from the browser.
+ * @param file The File object from an input element or drag-and-drop.
  */
 export async function parseResume(file: File): Promise<ParseResult> {
   try {
@@ -111,17 +128,11 @@ export async function parseResume(file: File): Promise<ParseResult> {
     
     return parseResumeFile(buffer, mimeType);
   } catch (error) {
-    console.error('Error parsing resume file:', error);
+    console.error('[ResumeParser] Error processing file:', error);
     return {
       text: '',
       success: false,
-      error: error instanceof Error ? error.message : 'Failed to parse resume file',
+      error: error instanceof Error ? error.message : 'Failed to process resume file',
     };
   }
 }
-
-// Resume parsing logic improved
-
-// Resume parsing logic improved
-
-// Resume parsing logic improved
